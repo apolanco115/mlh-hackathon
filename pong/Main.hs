@@ -2,6 +2,7 @@ module Main(main, PongGame(..), render, initialState) where
 
 import Graphics.Gloss
 import Graphics.Gloss.Data.ViewPort
+import Graphics.Gloss.Interface.Pure.Game 
 
 width, height, offset :: Int
 width = 300
@@ -35,11 +36,11 @@ type Radius = Float
 type Position = (Float, Float)
 
 main :: IO ()
-main = simulate window background fps initialState render update
+main = play window background fps initialState render handleKeys update
 -- | Update the game by moving the ball
 -- Ignore the ViewPort argument
-update :: ViewPort -> Float -> PongGame -> PongGame
-update _ seconds = wallBounce . paddleBounce . moveBall seconds
+update :: Float -> PongGame -> PongGame
+update seconds = wallBounce . paddleBounce . moveBall seconds
 
 -- | Given position and radius of the ball, return whether a collision occurred
 paddleCollision :: PongGame -> Radius -> Bool
@@ -51,7 +52,7 @@ paddleCollision game radius = leftCollision || rightCollision
     (x, y) = ballLoc game
     -- detect collision
     leftCollision = x <= (player1PaddleXPosition - (paddleWidth / 2)) && withinPaddleArea (x, y) ballRadius y1
-    rightCollision = x >= (player2PaddleXPosition - (paddleWidth / 2))  && withinPaddleArea (x, y) ballRadius y2
+    rightCollision = x >= (player2PaddleXPosition + (paddleWidth / 2)) && withinPaddleArea (x, y) ballRadius y2
     -- check to see if ball is within the paddle area
     withinPaddleArea :: Position -- ^ Position of the ball
                         -> Float -- ^ Ball radius
@@ -159,3 +160,13 @@ moveBall seconds game = game {
     x' = x + vx * seconds
     y' = y + vy * seconds
 
+-- | Respond to key events.
+handleKeys :: Event -> PongGame -> PongGame
+
+-- for an 's' key press, reset the ball to the center
+handleKeys (EventKey (Char 's') _ _ _) game = game {
+  ballLoc = (0, 0)
+}
+
+-- Do nothing for all other events.
+handleKeys _ game = game
