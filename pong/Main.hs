@@ -50,8 +50,8 @@ paddleCollision game radius = leftCollision || rightCollision
     y2 = player2 game
     (x, y) = ballLoc game
     -- detect collision
-    leftCollision = x <= player1PaddleXPosition && withinPaddleArea (x, y) ballRadius y1
-    rightCollision = x >= player2PaddleXPosition && withinPaddleArea (x, y) ballRadius y2
+    leftCollision = x <= (player1PaddleXPosition - (paddleWidth / 2)) && withinPaddleArea (x, y) ballRadius y1
+    rightCollision = x >= (player2PaddleXPosition - (paddleWidth / 2))  && withinPaddleArea (x, y) ballRadius y2
     -- check to see if ball is within the paddle area
     withinPaddleArea :: Position -- ^ Position of the ball
                         -> Float -- ^ Ball radius
@@ -116,7 +116,7 @@ initialState = Game {
   ballLoc = (90, 30),
   ballVel = (30, -10),
   player1 = 80,
-  player2 = -50
+  player2 = -30
 }
 
 -- | Convert a game state into a picture
