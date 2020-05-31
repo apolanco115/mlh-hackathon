@@ -170,5 +170,11 @@ handleKeys (EventKey (Char 'w') _ _ _) game = game {
     initialHeight = player1 game
     increment = initialHeight + 5
 
+handleKeys (EventKey (Char 's') _ _ _) game = game {
+  player1 = increment
+} where
+    initialHeight = player1 game
+    increment = initialHeight - 5
+
 -- Do nothing for all other events.
 handleKeys _ game = game
