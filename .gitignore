@@ -1,0 +1,4 @@
+/pong/dist/
+/pong/.cabal-sandbox
+/websocket/dist
+/websocket/.cabal-sandbox
