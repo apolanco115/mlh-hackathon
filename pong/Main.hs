@@ -2,9 +2,13 @@ module Main(main, PongGame(..), render, initialState) where
 
 import Graphics.Gloss
 import Graphics.Gloss.Data.ViewPort
+import Graphics.Gloss.Interface.Pure.Game 
+import Network.Socket
+import System.IO
+import Control.Concurrent
+import Control.Monad (when)
+import Control.Monad.Fix (fix)
 import Graphics.Gloss.Interface.Pure.Game
-
-import System.Random
 
 width, height, offset :: Int
 width = 300
@@ -32,15 +36,58 @@ paddleHeight :: Float
 paddleHeight = 86
 
 paddleWidth :: Float
-paddleWidth = 20
+paddleWidth = 26
 
 type Radius = Float
 type Position = (Float, Float)
+type Pong = (Float, -- ^ Ball x velocity
+  Float, -- ^ Ball y velocity
+  Float) -- ^ Player paddle position
 
 main :: IO ()
-main = play window background fps initialState render handleKeys update
--- | Update the game by moving the ball
--- Ignore the ViewPort argument
+main = do
+  play window background fps initialState render handleKeys update 
+  sock <- socket AF_INET Stream 0
+  setSocketOption sock ReuseAddr 1
+  bind sock (SockAddrInet 4242 iNADDR_ANY)
+  listen sock 2
+  chan <- newChan
+  _ <- forkIO $ fix $ \loop -> do
+    (_, _, _) <- readChan chan
+    loop
+  mainLoop sock chan initialState
+
+-- | Loops communication with the websocket
+mainLoop :: Socket -- ^ Web socket used for communication
+            -> Chan Pong -- ^ Communication channel of type Pong
+            -> PongGame -- ^ Current game
+            -> IO ()
+mainLoop sock chan game = do
+  conn <- accept sock
+  forkIO (runConn conn chan game) -- forks this function on a different thread
+  mainLoop sock chan game -- recursive call to keep looping
+
+runConn :: (Socket, SockAddr) -> Chan Pong -> PongGame -> IO ()
+runConn (sock, _) chan game = do
+    let (xVel, yVel) = ballVel game
+    let pos = player1 game
+    let broadcast pong = writeChan chan (xVel, yVel, pos) -- ^ allows Pong data to be written to the channel
+    communicationLine <- dupChan chan -- ^ Duplicate channel in order to read from the channel
+
+    reader <- forkIO $ fix $ \loop -> do
+        (xVel, yVel, pos) <- readChan communicationLine
+        -- todo: update ball velocities and player2 position
+        loop
+
+    fix $ \loop -> do
+        let (xVel', yVel') = ballVel game
+        let pos' = player1 game
+        broadcast (xVel', yVel', pos')
+        loop
+
+    killThread reader
+      
+
 update :: Float -> PongGame -> PongGame
 update seconds = outOfBounds . wallBounce . paddleBounce . moveBall seconds
 
