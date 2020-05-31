@@ -45,44 +45,10 @@ type Pong = (Float, -- ^ Ball x velocity
   Float) -- ^ Player paddle position
 
 main :: IO ()
-main = play window background fps initialState render handleKeys update $ establishConn
-
-establishConn :: ((Socket, SockAddr), Chan)
-establishConn = (conn, chan)
-                where 
-                    sock = socket AF_INET Stream 0
-                    setSocketOption sock ReuseAddr 1
-                    bind sock (SockAddrInet 4242 iNADDR_ANY)
-                    listen sock 2
-                    conn = accept sock
-                    chan = newChan
-                    _ = forkIO $ fix $ \loop -> do
-                            (_, _, _) <- readChan chan
-                        loop
-
-runConn :: (Socket, SockAddr) -> Chan Pong -> PongGame
-runConn (sock, _) chan game = do
-    let (xVel, yVel) = ballVel game
-    let pos = player1 game
-    let broadcast pong = writeChan chan (xVel, yVel, pos) -- ^ allows Pong data to be written to the channel
-    communicationLine <- dupChan chan -- ^ Duplicate channel in order to read from the channel
-
-    reader <- forkIO $ fix $ \loop -> do
-        (xVel, yVel, pos) <- readChan communicationLine
-        -- todo: update ball velocities and player2 position
-        loop
-
-    fix $ \loop -> do
-        let (xVel', yVel') = ballVel game
-        let pos' = player1 game
-        broadcast (xVel', yVel', pos')
-        loop
-
-    killThread reader
-      
+main = play window background fps initialState render handleKeys update
 
 update :: Float -> PongGame -> PongGame
-update seconds = outOfBounds . wallBounce . paddleBounce . moveBall seconds $ runConn conn chan
+update seconds = outOfBounds . wallBounce . paddleBounce . moveBall seconds
 
 
 -- | Given position and radius of the ball, return whether a collision occurred
