@@ -2,7 +2,9 @@ module Main(main, PongGame(..), render, initialState) where
 
 import Graphics.Gloss
 import Graphics.Gloss.Data.ViewPort
-import Graphics.Gloss.Interface.Pure.Game 
+import Graphics.Gloss.Interface.Pure.Game
+
+import System.Random
 
 width, height, offset :: Int
 width = 300
@@ -40,7 +42,7 @@ main = play window background fps initialState render handleKeys update
 -- | Update the game by moving the ball
 -- Ignore the ViewPort argument
 update :: Float -> PongGame -> PongGame
-update seconds = wallBounce . paddleBounce . moveBall seconds
+update seconds = outOfBounds . wallBounce . paddleBounce . moveBall seconds
 
 -- | Given position and radius of the ball, return whether a collision occurred
 paddleCollision :: PongGame -> Radius -> Bool
@@ -52,7 +54,7 @@ paddleCollision game radius = leftCollision || rightCollision
     (x, y) = ballLoc game
     -- detect collision
     leftCollision = ((x - ballRadius) < (player1PaddleXPosition + (paddleWidth / 2))) && (withinPaddleArea (x, y) ballRadius y1)
-    rightCollision = ((x - ballRadius) > (player2PaddleXPosition - (paddleWidth / 2))) && (withinPaddleArea (x, y) ballRadius y2)
+    rightCollision = ((x + ballRadius) > (player2PaddleXPosition - (paddleWidth / 2))) && (withinPaddleArea (x, y) ballRadius y2)
     -- check to see if ball is within the paddle area
     withinPaddleArea :: Position -- ^ Position of the ball
                         -> Float -- ^ Ball radius
@@ -102,6 +104,22 @@ wallBounce game = game {
           else
             -- Do nothing
             vy
+
+outOfBounds :: PongGame -> PongGame
+outOfBounds game = game {
+  ballLoc = (x', y') 
+} where
+    (x, y) = ballLoc game
+    (vx, vy) = ballVel game
+
+    (x', y') = if (x > fromIntegral width / 2) || (x < -fromIntegral width / 2)
+          then
+            -- Update velocity
+            (0, 0)
+          else
+            -- Do nothing
+            (x, y)
+
 
 data PongGame = Game {
   ballLoc :: (Float, Float), -- ^ Pong ball (x, y) location
