@@ -161,20 +161,28 @@ moveBall seconds game = game {
     y' = y + vy * seconds
 
 -- | Respond to key events.
+-- handleKeys :: Event -> PongGame -> PongGame
+
+-- -- for an 's' key press, reset the ball to the center
+-- handleKeys (EventKey (Char 'w') Down _ _) game = game {
+--   player1 = increment
+-- } where
+--     initialHeight = player1 game
+--     increment = initialHeight + 5
+
+-- handleKeys (EventKey (Char 's') Down _ _) game = game {
+--   player1 = increment
+-- } where
+--     initialHeight = player1 game
+--     increment = initialHeight - 5
+
 handleKeys :: Event -> PongGame -> PongGame
 
 -- for an 's' key press, reset the ball to the center
-handleKeys (EventKey (Char 'w') Down _ _) game = game {
+handleKeys (EventKey (MouseButton LeftButton) Down _ (x', y')) game = game {
   player1 = increment
 } where
-    initialHeight = player1 game
-    increment = initialHeight + 5
-
-handleKeys (EventKey (Char 's') Down _ _) game = game {
-  player1 = increment
-} where
-    initialHeight = player1 game
-    increment = initialHeight - 5
+    increment = y'
 
 -- Do nothing for all other events.
 handleKeys _ game = game
