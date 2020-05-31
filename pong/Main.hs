@@ -10,12 +10,6 @@ import Control.Monad (when)
 import Control.Monad.Fix (fix)
 import Graphics.Gloss.Interface.Pure.Game
 
-<<<<<<< HEAD
-clamp :: (Ord a) => a -> a -> a -> a
-clamp mn mx = max mn . min mx
-
-=======
->>>>>>> 11bacf767277273daabbcbc4f73c37ee53ecd0b2
 width, height, offset :: Int
 width = 300
 height = 300
