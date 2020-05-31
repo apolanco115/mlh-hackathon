@@ -10,8 +10,6 @@ import Control.Monad (when)
 import Control.Monad.Fix (fix)
 import Graphics.Gloss.Interface.Pure.Game
 
-import System.Random
-
 width, height, offset :: Int
 width = 300
 height = 300
@@ -75,32 +73,18 @@ runConn (sock, _) chan game = do
 
     reader <- forkIO $ fix $ \loop -> do
         (xVel, yVel, pos) <- readChan communicationLine
-        
+        -- todo: update ball velocities and player2 position
         loop
 
     handle (\(SomeException _) -> return()) $ fix $ \loop -> do
-        (xVel', yVel') = ballVel game
-        pos' = player1 game
+        let (xVel', yVel') = ballVel game
+        let pos' = player1 game
         broadcast (xVel', yVel', pos')
         loop
 
     killThread reader
       
-    
 
--- | Update the game by moving the ball
--- Ignore the ViewPort argument
-update :: Float -> PongGame -> PongGame
-update seconds = wallBounce . paddleBounce . moveBall seconds
-paddleWidth = 20
-
-type Radius = Float
-type Position = (Float, Float)
-
-main :: IO ()
-main = play window background fps initialState render handleKeys update
--- | Update the game by moving the ball
--- Ignore the ViewPort argument
 update :: Float -> PongGame -> PongGame
 update seconds = outOfBounds . wallBounce . paddleBounce . moveBall seconds
 
