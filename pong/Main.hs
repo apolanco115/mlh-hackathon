@@ -4,7 +4,8 @@ import Graphics.Gloss
 import Graphics.Gloss.Data.ViewPort
 import Graphics.Gloss.Interface.Pure.Game
 
-import System.Random
+clamp :: (Ord a) => a -> a -> a -> a
+clamp mn mx = max mn . min mx
 
 width, height, offset :: Int
 width = 300
@@ -23,6 +24,8 @@ fps = 60
 ballRadius :: Radius
 ballRadius = 10
 
+paddleSpeed = 4.0
+
 player1PaddleXPosition :: Float
 player2PaddleXPosition :: Float
 player1PaddleXPosition = (-120)
@@ -34,6 +37,9 @@ paddleHeight = 86
 paddleWidth :: Float
 paddleWidth = 20
 
+paddleYMax = 150 - paddleHeight
+
+
 type Radius = Float
 type Position = (Float, Float)
 
@@ -42,7 +48,7 @@ main = play window background fps initialState render handleKeys update
 -- | Update the game by moving the ball
 -- Ignore the ViewPort argument
 update :: Float -> PongGame -> PongGame
-update seconds = outOfBounds . wallBounce . paddleBounce . moveBall seconds
+update seconds = outOfBounds . updatePaddle . wallBounce . paddleBounce . moveBall seconds
 
 -- | Given position and radius of the ball, return whether a collision occurred
 paddleCollision :: PongGame -> Radius -> Bool
@@ -110,7 +116,6 @@ outOfBounds game = game {
   ballLoc = (x', y') 
 } where
     (x, y) = ballLoc game
-    (vx, vy) = ballVel game
 
     (x', y') = if (x > fromIntegral width / 2) || (x < -fromIntegral width / 2)
           then
@@ -120,13 +125,15 @@ outOfBounds game = game {
             -- Do nothing
             (x, y)
 
+data PaddleMovement = PaddleUp | PaddleStill | PaddleDown deriving Show
 
 data PongGame = Game {
   ballLoc :: (Float, Float), -- ^ Pong ball (x, y) location
   ballVel :: (Float, Float), -- ^ Pong ball (x, y) velocity
   player1 :: Float, -- ^ Left player paddle height
                     -- Zero is middle of the screen
-  player2 :: Float -- ^ Right player paddle height
+  player2 :: Float, -- ^ Right player paddle height
+  paddleMove :: PaddleMovement
 } deriving Show
 
 -- | The starting state for the game of Pong
@@ -135,7 +142,8 @@ initialState = Game {
   ballLoc = (90, 30),
   ballVel = (30, -10),
   player1 = 80,
-  player2 = -30
+  player2 = -30,
+  paddleMove = PaddleStill
 }
 
 -- | Convert a game state into a picture
@@ -194,13 +202,30 @@ moveBall seconds game = game {
 --     initialHeight = player1 game
 --     increment = initialHeight - 5
 
-handleKeys :: Event -> PongGame -> PongGame
 
--- for an 's' key press, reset the ball to the center
-handleKeys (EventKey (MouseButton LeftButton) Down _ (x', y')) game = game {
-  player1 = increment
-} where
-    increment = y'
+movePaddle :: Float -> PaddleMovement -> Float
+movePaddle py PaddleUp = py + 5
+movePaddle py PaddleStill = py
+movePaddle py PaddleDown = py - 5
+
+updatePaddle :: PongGame -> PongGame
+updatePaddle game = game { player1 = movePaddle (player1 game) (paddleMove game)}
+
+
+handleKeys :: Event -> PongGame -> PongGame
+handleKeys (EventKey (Char 'w') Down _ _) game = game { paddleMove = PaddleUp }
+handleKeys (EventKey (Char 'w') Up _ _) game = game { paddleMove = PaddleStill }
+handleKeys (EventKey (Char 's') Down _ _) game = game { paddleMove = PaddleDown }
+handleKeys (EventKey (Char 's') Up _ _) game = game { paddleMove = PaddleStill }
+
+
+-- handleKeys :: Event -> PongGame -> PongGame
+
+-- -- for an 's' key press, reset the ball to the center
+-- handleKeys (EventKey (MouseButton LeftButton) Down _ (x', y')) game = game {
+--   player1 = increment
+-- } where
+--     increment = y'
 
 -- Do nothing for all other events.
 handleKeys _ game = game
