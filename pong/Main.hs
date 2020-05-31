@@ -2,13 +2,30 @@ module Main(main, PongGame(..), render, initialState) where
 
 import Graphics.Gloss
 import Graphics.Gloss.Data.ViewPort
-import Graphics.Gloss.Interface.Pure.Game 
 import Network.Socket
 import System.IO
+import System.IO.Unsafe
 import Control.Concurrent
 import Control.Monad (when)
 import Control.Monad.Fix (fix)
-import Graphics.Gloss.Interface.Pure.Game
+import Graphics.Gloss.Interface.IO.Game
+import Network.WebSockets hiding (Message)
+import Network.Socket (withSocketsDo)
+import Graphics.Gloss.Interface.IO.Game
+import Data.Bifunctor
+import Data.Biapplicative
+import Data.Monoid
+import Data.Maybe (catMaybes)
+import Data.List (partition)
+import Control.Concurrent.Chan
+import Control.Concurrent.MVar
+import Control.Concurrent
+import Control.Monad (forever)
+import GHC.Generics
+import Data.Serialize (Serialize, encodeLazy, decodeLazy, get)
+import Control.Monad
+import System.Environment
+import System.Exit
 
 width, height, offset :: Int
 width = 300
@@ -45,56 +62,98 @@ paddleYMax = 150 - paddleHeight
 
 type Radius = Float
 type Position = (Float, Float)
-type Pong = (Float, -- ^ Ball x velocity
-  Float, -- ^ Ball y velocity
-  Float) -- ^ Player paddle position
+type PongTuple = (Float, Float, Float)
+data Pong = Pong {
+  xVel :: Float,
+  yVel :: Float,
+  pos :: Float
+} deriving (Show, Read)
+
+instance Serialize Pong
+
+data Role = Server Int | Client String Int deriving (Show, Read)
 
 main :: IO ()
 main = do
-  play window background fps initialState render handleKeys update 
-  sock <- socket AF_INET Stream 0
-  setSocketOption sock ReuseAddr 1
-  bind sock (SockAddrInet 4242 iNADDR_ANY)
-  listen sock 2
-  chan <- newChan
-  _ <- forkIO $ fix $ \loop -> do
-    (_, _, _) <- readChan chan
-    loop
-  mainLoop sock chan initialState
+  args <- getArgs
+  role <- case args of ip:port:[] -> return $ Client ip (read port)
+                       port:[] -> return $ Server $ read port
+                       _ -> do
+                               putStrLn "Invalid arguments."
+                               putStrLn "Usage:"
+                               putStrLn "  pong address port      - connects to an existing server"
+                               putStrLn "  pong port              - creates a server"
+                               exitFailure
+  sendChan <- newChan
+  recvMVar <- newMVar []
+  gameState <- newMVar (30, -10, -30)
+  _ <- forkIO $ case role of
+    Server port -> do
+      runServer "0.0.0.0" port $ ws gameState sendChan <=< acceptRequest
+    Client ip port -> do
+      withSocketsDo $ runClient ip port "/" $ ws gameState sendChan
+  playIO window background fps initialState render handleKeys (update gameState sendChan)
+  --TODO clean up the socket properly
 
--- | Loops communication with the websocket
-mainLoop :: Socket -- ^ Web socket used for communication
-            -> Chan Pong -- ^ Communication channel of type Pong
-            -> PongGame -- ^ Current game
-            -> IO ()
-mainLoop sock chan game = do
-  conn <- accept sock
-  forkIO (runConn conn chan game) -- forks this function on a different thread
-  mainLoop sock chan game -- recursive call to keep looping
 
-runConn :: (Socket, SockAddr) -> Chan Pong -> PongGame -> IO ()
-runConn (sock, _) chan game = do
-    let (xVel, yVel) = ballVel game
-    let pos = player1 game
-    let broadcast pong = writeChan chan (xVel, yVel, pos) -- ^ allows Pong data to be written to the channel
-    communicationLine <- dupChan chan -- ^ Duplicate channel in order to read from the channel
+update :: MVar PongTuple -> Chan Pong -> Float -> PongGame -> IO PongGame
+update state chan seconds game = 
+  writeState chan =<<
+  updateGame state game =<<
+  ((outOfBounds game . updatePaddle game . wallBounce game . paddleBounce game . moveBall seconds game))
 
-    reader <- forkIO $ fix $ \loop -> do
-        (xVel, yVel, pos) <- readChan communicationLine
-        -- todo: update ball velocities and player2 position
-        loop
 
-    fix $ \loop -> do
-        let (xVel', yVel') = ballVel game
-        let pos' = player1 game
-        broadcast (xVel', yVel', pos')
-        loop
+updateGame :: MVar PongTuple -> PongGame -> IO PongGame
+updateGame state game = do
+  gs <- readMVar state
+  let (xVel', yVel', pos') = gs
+  return game {
+    ballVel = (xVel', yVel'),
+    player2 = pos'
+  }
 
-    killThread reader
-      
+writeState :: Chan Pong -> PongGame -> IO PongGame
+writeState chan game = do
+  let (xVel', yVel') = ballVel game
+  let pong = pong {
+    xVel = xVel',
+    yVel = yVel',
+    pos = player2 game
+  }
+  writeChan chan pong
+  return game
 
-update :: Float -> PongGame -> PongGame
-update seconds = outOfBounds . updatePaddle . wallBounce . paddleBounce . moveBall seconds
+fromRight (Right a) = a --FIXME ignore, report or something
+fromRight _ = error "deserialization error. sorry :("
+
+instance WebSocketsData Pong where
+  fromLazyByteString = fromRight . decodeLazy
+  toLazyByteString = encodeLazy
+  fromDataMessage (Binary bs) = fromLazyByteString bs
+  fromDataMessage _ = error "Invalid websocket message"
+
+ws :: MVar PongTuple -> Chan Pong -> Connection -> IO ()
+ws gameState chan conn = do
+  _ <- forkIO $ recvData conn gameState
+  sendData conn chan
+
+sendData :: Connection -> Chan Pong -> IO ()
+sendData conn ch = do
+  forever $ do
+    m <- readChan ch
+    sendBinaryData conn m
+  --hClose hdl
+
+recvData :: Connection -> MVar PongTuple -> IO ()
+recvData conn gameState = do
+  forever $ do
+    pong <- receiveData conn
+    modifyMVar_ gameState $ \_-> do
+      let xVel' = xVel pong
+      let yVel' = yVel pong
+      let pos' = pos pong
+      return (xVel', yVel', pos')
+  --hClose hdl
 
 -- | Given position and radius of the ball, return whether a collision occurred
 paddleCollision :: PongGame -> Radius -> Bool
@@ -180,7 +239,7 @@ data PongGame = Game {
                     -- Zero is middle of the screen
   player2 :: Float, -- ^ Right player paddle height
   paddleMove :: PaddleMovement
-} deriving Show
+} deriving (Show)
 
 -- | The starting state for the game of Pong
 initialState :: PongGame
@@ -193,9 +252,9 @@ initialState = Game {
 }
 
 -- | Convert a game state into a picture
-render :: PongGame -- ^ The game state to render
-          -> Picture -- ^ A picture of this game state
-render game = pictures [ball, walls,
+render :: Monad m => PongGame -- ^ The game state to render
+          -> m Picture -- ^ A picture of this game state
+render game = return $ pictures [ball, walls,
                 mkPaddle rose player1PaddleXPosition $ player1 game,
                 mkPaddle orange player2PaddleXPosition $ player2 game
                 ] where
@@ -258,11 +317,11 @@ updatePaddle :: PongGame -> PongGame
 updatePaddle game = game { player1 = movePaddle (player1 game) (paddleMove game)}
 
 
-handleKeys :: Event -> PongGame -> PongGame
-handleKeys (EventKey (Char 'w') Down _ _) game = game { paddleMove = PaddleUp }
-handleKeys (EventKey (Char 'w') Up _ _) game = game { paddleMove = PaddleStill }
-handleKeys (EventKey (Char 's') Down _ _) game = game { paddleMove = PaddleDown }
-handleKeys (EventKey (Char 's') Up _ _) game = game { paddleMove = PaddleStill }
+handleKeys :: Monad m => Event -> PongGame -> m PongGame
+handleKeys (EventKey (Char 'w') Down _ _) game = return game { paddleMove = PaddleUp }
+handleKeys (EventKey (Char 'w') Up _ _) game = return game { paddleMove = PaddleStill }
+handleKeys (EventKey (Char 's') Down _ _) game = return game { paddleMove = PaddleDown }
+handleKeys (EventKey (Char 's') Up _ _) game = return game { paddleMove = PaddleStill }
 
 
 -- handleKeys :: Event -> PongGame -> PongGame
@@ -274,4 +333,4 @@ handleKeys (EventKey (Char 's') Up _ _) game = game { paddleMove = PaddleStill }
 --     increment = y'
 
 -- Do nothing for all other events.
-handleKeys _ game = game
+handleKeys _ game = return game
