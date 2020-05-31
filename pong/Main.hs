@@ -164,13 +164,13 @@ moveBall seconds game = game {
 handleKeys :: Event -> PongGame -> PongGame
 
 -- for an 's' key press, reset the ball to the center
-handleKeys (EventKey (Char 'w') _ _ _) game = game {
+handleKeys (EventKey (Char 'w') Down _ _) game = game {
   player1 = increment
 } where
     initialHeight = player1 game
     increment = initialHeight + 5
 
-handleKeys (EventKey (Char 's') _ _ _) game = game {
+handleKeys (EventKey (Char 's') Down _ _) game = game {
   player1 = increment
 } where
     initialHeight = player1 game
