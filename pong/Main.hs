@@ -30,7 +30,7 @@ paddleHeight :: Float
 paddleHeight = 86
 
 paddleWidth :: Float
-paddleWidth = 26
+paddleWidth = 20
 
 type Radius = Float
 type Position = (Float, Float)
@@ -51,8 +51,8 @@ paddleCollision game radius = leftCollision || rightCollision
     y2 = player2 game
     (x, y) = ballLoc game
     -- detect collision
-    leftCollision = x <= (player1PaddleXPosition - (paddleWidth / 2)) && withinPaddleArea (x, y) ballRadius y1
-    rightCollision = x >= (player2PaddleXPosition + (paddleWidth / 2)) && withinPaddleArea (x, y) ballRadius y2
+    leftCollision = ((x - ballRadius) < (player1PaddleXPosition + (paddleWidth / 2))) && (withinPaddleArea (x, y) ballRadius y1)
+    rightCollision = ((x - ballRadius) > (player2PaddleXPosition - (paddleWidth / 2))) && (withinPaddleArea (x, y) ballRadius y2)
     -- check to see if ball is within the paddle area
     withinPaddleArea :: Position -- ^ Position of the ball
                         -> Float -- ^ Ball radius
