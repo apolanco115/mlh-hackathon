@@ -55,19 +55,22 @@ main = do
   _ <- forkIO $ fix $ \loop -> do
     (_, _, _) <- readChan chan
     loop
-  mainLoop sock chan
+  mainLoop sock chan initialState
 
 -- | Loops communication with the websocket
 mainLoop :: Socket -- ^ Web socket used for communication
             -> Chan Pong -- ^ Communication channel of type Pong
+            -> PongGame -- ^ Current game
             -> IO ()
-mainLoop sock chan = do
+mainLoop sock chan game = do
   conn <- accept sock
-  forkIO (runConn conn chan) -- forks this function on a different thread
-  mainLoop sock chan -- recursive call to keep looping
+  forkIO (runConn conn chan game) -- forks this function on a different thread
+  mainLoop sock chan game -- recursive call to keep looping
 
 runConn :: (Socket, SockAddr) -> Chan Pong -> PongGame -> IO ()
 runConn (sock, _) chan game = do
+    let (xVel, yVel) = ballVel game
+    let pos = player1 game
     let broadcast pong = writeChan chan (xVel, yVel, pos) -- ^ allows Pong data to be written to the channel
     communicationLine <- dupChan chan -- ^ Duplicate channel in order to read from the channel
 
@@ -76,7 +79,7 @@ runConn (sock, _) chan game = do
         -- todo: update ball velocities and player2 position
         loop
 
-    handle (\(SomeException _) -> return()) $ fix $ \loop -> do
+    fix $ \loop -> do
         let (xVel', yVel') = ballVel game
         let pos' = player1 game
         broadcast (xVel', yVel', pos')
