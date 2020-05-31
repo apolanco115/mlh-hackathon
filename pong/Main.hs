@@ -8,6 +8,9 @@ import System.IO
 import Control.Concurrent
 import Control.Monad (when)
 import Control.Monad.Fix (fix)
+import Graphics.Gloss.Interface.Pure.Game
+
+import System.Random
 
 width, height, offset :: Int
 width = 300
@@ -56,22 +59,50 @@ main = do
     loop
   mainLoop sock chan
 
-mainLoop :: Socket -> Chan Pong -> IO ()
+-- | Loops communication with the websocket
+mainLoop :: Socket -- ^ Web socket used for communication
+            -> Chan Pong -- ^ Communication channel of type Pong
+            -> IO ()
 mainLoop sock chan = do
   conn <- accept sock
-  forkIO (runConn conn chan)
-  mainLoop sock chan
+  forkIO (runConn conn chan) -- forks this function on a different thread
+  mainLoop sock chan -- recursive call to keep looping
 
-runConn :: (Socket, SockAddr) -> Chan Pong -> IO ()
-runConn (sock, _) chan = do
-    let broadcast pong = writeChan chan (xVel, yVel, pos)
-    hdl <-
+runConn :: (Socket, SockAddr) -> Chan Pong -> PongGame -> IO ()
+runConn (sock, _) chan game = do
+    let broadcast pong = writeChan chan (xVel, yVel, pos) -- ^ allows Pong data to be written to the channel
+    communicationLine <- dupChan chan -- ^ Duplicate channel in order to read from the channel
 
--- play window background fps initialState render handleKeys update
+    reader <- forkIO $ fix $ \loop -> do
+        (xVel, yVel, pos) <- readChan communicationLine
+        
+        loop
+
+    handle (\(SomeException _) -> return()) $ fix $ \loop -> do
+        (xVel', yVel') = ballVel game
+        pos' = player1 game
+        broadcast (xVel', yVel', pos')
+        loop
+
+    killThread reader
+      
+    
+
 -- | Update the game by moving the ball
 -- Ignore the ViewPort argument
 update :: Float -> PongGame -> PongGame
 update seconds = wallBounce . paddleBounce . moveBall seconds
+paddleWidth = 20
+
+type Radius = Float
+type Position = (Float, Float)
+
+main :: IO ()
+main = play window background fps initialState render handleKeys update
+-- | Update the game by moving the ball
+-- Ignore the ViewPort argument
+update :: Float -> PongGame -> PongGame
+update seconds = outOfBounds . wallBounce . paddleBounce . moveBall seconds
 
 -- | Given position and radius of the ball, return whether a collision occurred
 paddleCollision :: PongGame -> Radius -> Bool
@@ -82,8 +113,8 @@ paddleCollision game radius = leftCollision || rightCollision
     y2 = player2 game
     (x, y) = ballLoc game
     -- detect collision
-    leftCollision = x <= (player1PaddleXPosition - (paddleWidth / 2)) && withinPaddleArea (x, y) ballRadius y1
-    rightCollision = x >= (player2PaddleXPosition + (paddleWidth / 2)) && withinPaddleArea (x, y) ballRadius y2
+    leftCollision = ((x - ballRadius) < (player1PaddleXPosition + (paddleWidth / 2))) && (withinPaddleArea (x, y) ballRadius y1)
+    rightCollision = ((x + ballRadius) > (player2PaddleXPosition - (paddleWidth / 2))) && (withinPaddleArea (x, y) ballRadius y2)
     -- check to see if ball is within the paddle area
     withinPaddleArea :: Position -- ^ Position of the ball
                         -> Float -- ^ Ball radius
@@ -133,6 +164,22 @@ wallBounce game = game {
           else
             -- Do nothing
             vy
+
+outOfBounds :: PongGame -> PongGame
+outOfBounds game = game {
+  ballLoc = (x', y') 
+} where
+    (x, y) = ballLoc game
+    (vx, vy) = ballVel game
+
+    (x', y') = if (x > fromIntegral width / 2) || (x < -fromIntegral width / 2)
+          then
+            -- Update velocity
+            (0, 0)
+          else
+            -- Do nothing
+            (x, y)
+
 
 data PongGame = Game {
   ballLoc :: (Float, Float), -- ^ Pong ball (x, y) location
@@ -192,14 +239,28 @@ moveBall seconds game = game {
     y' = y + vy * seconds
 
 -- | Respond to key events.
+-- handleKeys :: Event -> PongGame -> PongGame
+
+-- -- for an 's' key press, reset the ball to the center
+-- handleKeys (EventKey (Char 'w') Down _ _) game = game {
+--   player1 = increment
+-- } where
+--     initialHeight = player1 game
+--     increment = initialHeight + 5
+
+-- handleKeys (EventKey (Char 's') Down _ _) game = game {
+--   player1 = increment
+-- } where
+--     initialHeight = player1 game
+--     increment = initialHeight - 5
+
 handleKeys :: Event -> PongGame -> PongGame
 
 -- for an 's' key press, reset the ball to the center
-handleKeys (EventKey (Char 'w') _ _ _) game = game {
+handleKeys (EventKey (MouseButton LeftButton) Down _ (x', y')) game = game {
   player1 = increment
 } where
-    initialHeight = player1 game
-    increment = initialHeight + 5
+    increment = y'
 
 -- Do nothing for all other events.
 handleKeys _ game = game
