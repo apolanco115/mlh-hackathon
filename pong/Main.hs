@@ -45,29 +45,22 @@ type Pong = (Float, -- ^ Ball x velocity
   Float) -- ^ Player paddle position
 
 main :: IO ()
-main = do
-  play window background fps initialState render handleKeys update 
-  sock <- socket AF_INET Stream 0
-  setSocketOption sock ReuseAddr 1
-  bind sock (SockAddrInet 4242 iNADDR_ANY)
-  listen sock 2
-  chan <- newChan
-  _ <- forkIO $ fix $ \loop -> do
-    (_, _, _) <- readChan chan
-    loop
-  mainLoop sock chan initialState
+main = play window background fps initialState render handleKeys update $ establishConn
 
--- | Loops communication with the websocket
-mainLoop :: Socket -- ^ Web socket used for communication
-            -> Chan Pong -- ^ Communication channel of type Pong
-            -> PongGame -- ^ Current game
-            -> IO ()
-mainLoop sock chan game = do
-  conn <- accept sock
-  forkIO (runConn conn chan game) -- forks this function on a different thread
-  mainLoop sock chan game -- recursive call to keep looping
+establishConn :: ((Socket, SockAddr), Chan)
+establishConn = (conn, chan)
+                where 
+                    sock = socket AF_INET Stream 0
+                    setSocketOption sock ReuseAddr 1
+                    bind sock (SockAddrInet 4242 iNADDR_ANY)
+                    listen sock 2
+                    conn = accept sock
+                    chan = newChan
+                    _ = forkIO $ fix $ \loop -> do
+                            (_, _, _) <- readChan chan
+                        loop
 
-runConn :: (Socket, SockAddr) -> Chan Pong -> PongGame -> IO ()
+runConn :: (Socket, SockAddr) -> Chan Pong -> PongGame
 runConn (sock, _) chan game = do
     let (xVel, yVel) = ballVel game
     let pos = player1 game
@@ -89,7 +82,8 @@ runConn (sock, _) chan game = do
       
 
 update :: Float -> PongGame -> PongGame
-update seconds = outOfBounds . wallBounce . paddleBounce . moveBall seconds
+update seconds = outOfBounds . wallBounce . paddleBounce . moveBall seconds $ runConn conn chan
+
 
 -- | Given position and radius of the ball, return whether a collision occurred
 paddleCollision :: PongGame -> Radius -> Bool
