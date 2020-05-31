@@ -6,7 +6,7 @@ To begin working with this project you must have the [Haskell Platform](https://
 
 ### Install and Run
 
-Once cloned `cd` into the `pong` director and run the following commands
+Once cloned `cd` into the `pong` directory and run the following commands:
 
 ```
 runhaskell Setup.hs configure —user
