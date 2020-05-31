@@ -64,6 +64,8 @@ mainLoop sock chan = do
 
 runConn :: (Socket, SockAddr) -> Chan Pong -> IO ()
 runConn (sock, _) chan = do
+    let broadcast pong = writeChan chan (xVel, yVel, pos)
+    hdl <-
 
 -- play window background fps initialState render handleKeys update
 -- | Update the game by moving the ball
